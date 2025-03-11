@@ -30,7 +30,7 @@ public class ModulithMarkAsProcessedIssueApplication {
     }
 }
 
-record SomeEvent(@JsonDeserialize(using = MoneyDeserializer.class) Money amount) {}
+record SomeEvent(int id, String eventName) {}
 
 @Service
 class SomeService {
@@ -42,7 +42,7 @@ class SomeService {
 
     @Transactional
     public void doSomething() {
-        publisher.publishEvent(new SomeEvent(Money.of(BigInteger.TEN, "EUR")));
+        publisher.publishEvent(new SomeEvent(1, "eventOne"));
     }
 
 }

@@ -43,10 +43,15 @@ class ModulithMarkAsProcessedIssueApplicationTests {
         // listener on purpose fails the first run
         assertThat(incompleteEventCount()).isOne();
 
+        assertThat(getSerializedEvent()).isEqualTo("{\"id\":1,\"eventName\":\"eventOne\"}");
+        // Reversing the JSON field order to simulate this issue, https://github.com/spring-projects/spring-modulith/issues/1049
+        updateSerializedEvent(jdbcClient);
+        assertThat(getSerializedEvent()).isEqualTo("{\"eventName\":\"eventOne\",\"id\":1}");
+
         // resubmit event - it is expected to succeed
         incompleteEventPublications.resubmitIncompletePublications(eventPublication -> true);
 
-        // wait until ti succeeds
+        // wait until it succeeds
         await().untilAsserted(() -> {
             assertThat(someEventListener.isSuccess()).isTrue();
         });
@@ -55,18 +60,7 @@ class ModulithMarkAsProcessedIssueApplicationTests {
             // number of incomplete events should be zero
             assertThat(incompleteEventCount()).isZero();
         } catch (AssertionFailedError e) {
-            // but it is not and there's nothing in regular logs saying that something went wrong
-            // except the trace "SQL update affected 0 rows" when
-            // UPDATE EVENT_PUBLICATION
-            // SET COMPLETION_DATE = ?
-            // WHERE
-            //		LISTENER_ID = ?
-            //		AND SERIALIZED_EVENT = ?
-            // gets executed
-            String serializedEvent = jdbcClient.sql("select serialized_event from event_publication")
-                    .query(String.class)
-                    .single();
-            LOGGER.warn("The actual content of serialized_event in the event_publication table: {} most likely does not match the content used when marking event as processed (see trace logs)", serializedEvent);
+            logSerializedEvent();
             throw e;
         }
     }
@@ -77,4 +71,34 @@ class ModulithMarkAsProcessedIssueApplicationTests {
                 .single();
     }
 
+    private void logSerializedEvent() {
+        // but it is not and there's nothing in regular logs saying that something went wrong
+        // except the trace "SQL update affected 0 rows" when
+        // UPDATE EVENT_PUBLICATION
+        // SET COMPLETION_DATE = ?
+        // WHERE
+        //		LISTENER_ID = ?
+        //		AND SERIALIZED_EVENT = ?
+        // gets executed
+        String serializedEvent = jdbcClient.sql("select serialized_event from event_publication")
+                .query(String.class)
+                .single();
+        LOGGER.warn("The actual content of serialized_event in the event_publication table: {} most likely does not match the content used when marking event as processed (see trace logs)", serializedEvent);
+    }
+
+    public String getSerializedEvent() {
+        return jdbcClient.sql("select serialized_event from event_publication")
+                .query(String.class)
+                .single();
+    }
+
+    public void updateSerializedEvent(JdbcClient jdbcClient) {
+        String sql = "UPDATE event_publication SET serialized_event = ?";
+
+        int rowsAffected = jdbcClient.sql(sql)
+                .params("{\"eventName\":\"eventOne\",\"id\":1}") // Reversing field order from original event
+                .update();
+
+        System.out.println("Rows affected: " + rowsAffected);
+    }
 }
